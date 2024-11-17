@@ -1,22 +1,67 @@
+
 #include <QApplication>
 #include <QWidget>
 #include <QPainter>
 #include <QVector>
 #include <vector>
+#include <QMouseEvent>
 
+// Definir los tres estados posibles para una ficha
+enum EstadoFicha {
+    Blanco,  // Nodo blanco
+    Negro,   // Nodo negro
+    Vacío    // Nodo vacío
+};
+
+// Clase que representa una ficha (blanca, negra o vacía)
+class Ficha {
+public:
+    EstadoFicha estado; // Estado de la ficha
+
+    // Constructor que por defecto establece el estado en Vacío
+    Ficha(EstadoFicha estado = Vacío) : estado(estado) {}
+
+    // Método para cambiar el estado de la ficha
+    void cambiarEstado() {
+        if (estado == Blanco) {
+            estado = Negro;
+        } else if (estado == Negro) {
+            estado = Vacío;
+        } else {
+            estado = Blanco;
+        }
+    }
+
+    // Método para obtener el color asociado al estado
+    QColor obtenerColor() const {
+        switch (estado) {
+            case Blanco:
+                return Qt::white;
+            case Negro:
+                return Qt::black;
+            case Vacío:
+                return Qt::lightGray; // Color neutral para vacío
+            default:
+                return Qt::lightGray;
+        }
+    }
+};
+
+// Clase Nodo que representa un nodo en el grafo
 class Nodo {
 public:
-    int dato; // Dato del nodo
+    Ficha ficha; // Atributo de tipo Ficha que almacena el estado del nodo
     QVector<Nodo*> vecinos; // Lista de nodos conectados
     QPoint posicion; // Posición del nodo
 
-    Nodo(int d) : dato(d) {} // Constructor
+    Nodo(EstadoFicha estado = Vacío) : ficha(estado) {} // Constructor, por defecto el nodo está vacío
 };
 
 class GrafoWidget : public QWidget {
     QVector<Nodo*> nodos; // Lista de nodos en el grafo
     std::vector<std::vector<int>> adjacencyList; // Lista de adyacencia
     int nodeCount = 33; // Número de nodos
+    Nodo* nodoSeleccionado = nullptr; // Nodo seleccionado para mover
 
 public:
     GrafoWidget() {
@@ -41,30 +86,32 @@ protected:
             }
         }
 
-        // Dibujar cada nodo (círculo)
+        // Dibujar cada nodo (círculo) sin texto ni números
         for (Nodo* nodo : nodos) {
-            painter.setBrush(Qt::lightGray);
+            // Obtener el color del nodo según su ficha
+            QColor colorNodo = nodo->ficha.obtenerColor();
+
+            painter.setBrush(colorNodo);
             painter.drawEllipse(nodo->posicion.x() - 10, nodo->posicion.y() - 10, 20, 20);
-            painter.drawText(nodo->posicion.x() - 5, nodo->posicion.y() + 5, QString::number(nodo->dato));
         }
     }
 
     void initializeGraph() {
-        // Crear nodos
+        // Crear nodos con ficha vacía
         for (int i = 0; i < nodeCount; i++) {
-            nodos.append(new Nodo(i));
+            nodos.append(new Nodo(Vacío)); // Cada nodo inicia con una ficha vacía
         }
 
         // Inicializar la lista de adyacencia
         adjacencyList.resize(nodeCount);
-        
+
         // Definir las conexiones usando la lista de adyacencia
-        adjacencyList[0] = {1, 3, 4};
+        adjacencyList[0] = {1, 3, 4};  // Nodo 0
         adjacencyList[1] = {0, 2, 4};
         adjacencyList[2] = {1, 4, 5};
         adjacencyList[3] = {0, 4, 6};
         adjacencyList[4] = {0, 1, 2, 3, 5, 6, 7 ,8};
-        adjacencyList[5] = {2, 4, 8};
+        adjacencyList[5] = {2, 4, 8};  // Nodo 5 (Inicialmente blanca)
         adjacencyList[6] = {3 ,4 ,7, 10, 14, 15, 16};
         adjacencyList[7] = {4, 6, 8, 16};
         adjacencyList[8] = {4, 5, 7, 11, 16, 17, 18};
@@ -99,6 +146,10 @@ protected:
                 nodos[i]->vecinos.append(nodos[vecino]);
             }
         }
+
+        // Inicializar el nodo 0 con ficha negra y el nodo 5 con ficha blanca
+        nodos[0]->ficha = Ficha(Negro);
+        nodos[5]->ficha = Ficha(Blanco);
     }
 
     void setNodePositions(int width, int height) {
@@ -143,6 +194,37 @@ protected:
         nodos[30]->posicion = QPoint(width * 3 / 8, height * 7 / 8); // 30
         nodos[31]->posicion = QPoint(width * 4 / 8, height * 7 / 8); // 31
         nodos[32]->posicion = QPoint(width * 5 / 8, height * 7 / 8); // 32
+
+        // Posicionar otros nodos...
+    }
+
+    // Método para manejar el clic del mouse y cambiar el estado del nodo
+    void mousePressEvent(QMouseEvent *event) override {
+        QPoint clickPos = event->pos();
+
+        // Si no hay nodo seleccionado, intentar seleccionar un nodo con una ficha
+        if (!nodoSeleccionado) {
+            for (Nodo* nodo : nodos) {
+                if (QRect(nodo->posicion.x() - 10, nodo->posicion.y() - 10, 20, 20).contains(clickPos)) {
+                    if (nodo->ficha.estado != Vacío) {
+                        nodoSeleccionado = nodo; // Marcar el nodo como seleccionado
+                        return;
+                    }
+                }
+            }
+        } else {
+            // Si hay un nodo seleccionado, buscar un vecino vacío para mover la ficha
+            for (Nodo* vecino : nodoSeleccionado->vecinos) {
+                if (QRect(vecino->posicion.x() - 10, vecino->posicion.y() - 10, 20, 20).contains(clickPos) && vecino->ficha.estado == Vacío) {
+                    // Mover la ficha del nodo seleccionado al vecino
+                    vecino->ficha = nodoSeleccionado->ficha;
+                    nodoSeleccionado->ficha = Ficha(Vacío); // El nodo original queda vacío
+                    nodoSeleccionado = nullptr; // Desmarcar nodo seleccionado
+                    update(); // Redibujar la ventana
+                    return;
+                }
+            }
+        }
     }
 
 public:
